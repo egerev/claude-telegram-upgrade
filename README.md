@@ -1,101 +1,137 @@
-# Telegram Zombie Fix for Claude Code
+# Claude Telegram Upgrade
 
-Fixes the **zombie process bug** in Claude Code's Telegram MCP plugin (v0.0.4).
+Community upgrade pack for Claude Code's [Telegram plugin](https://github.com/anthropics/claude-plugins-official) (v0.0.4). Patches apply on top of the official plugin — no fork, no divergence, easy to update.
 
-## The Problem
+## Patches
 
-When Claude Code restarts or crashes, the old Telegram bot process can stay alive as a zombie. The new instance then gets `409 Conflict` errors from Telegram's `getUpdates` API because only one consumer is allowed per bot token.
+| Patch | What it fixes |
+|-------|---------------|
+| [zombie-fix](patches/zombie-fix.patch) | Kills stale bot processes that cause 409 Conflict errors and 100% CPU |
+| voice-transcription *(coming soon)* | Transcribes voice messages to text via local Whisper (mlx-whisper / whisper.cpp) |
 
-### What's already in v0.0.4 (and why it's not enough)
-
-The official plugin ([anthropics/claude-plugins-official](https://github.com/anthropics/claude-plugins-official)) added retry with exponential backoff on 409 errors and graceful shutdown on stdin close ([PR #825](https://github.com/anthropics/claude-plugins-official/pull/825), merged 2026-03-21). This helps the new instance eventually take over, but **does not kill the zombie** — the old process keeps running, burning CPU in a retry loop. Multiple community PRs with PID-based fixes ([#903](https://github.com/anthropics/claude-plugins-official/pull/903), [#1070](https://github.com/anthropics/claude-plugins-official/pull/1070), [#1136](https://github.com/anthropics/claude-plugins-official/pull/1136)) were closed because the repo only accepts contributions from the Anthropic team.
-
-As of 2026-03-30, the root cause — zombie process accumulation — remains unfixed. Related open issues: [#947](https://github.com/anthropics/claude-plugins-official/issues/947), [#934](https://github.com/anthropics/claude-plugins-official/issues/934), [#1049](https://github.com/anthropics/claude-plugins-official/issues/1049), [#1146](https://github.com/anthropics/claude-plugins-official/issues/1146).
-
-## What This Patch Does
-
-1. **PID file management** — on startup, writes `{pid, tokenHash, startedAt}` to `.server.pid` in the plugin's state directory
-2. **Stale instance killer** — before starting, checks for a running process with the same bot token hash and kills it (SIGTERM → 2s grace → SIGKILL)
-3. **Clean shutdown** — removes the PID file on graceful exit
-4. **Awaited notification** — adds missing `await` to `mcp.notification()` call that could silently drop messages
-
-Each bot token gets its own PID file (identified by a hash of the token), so multiple bots on the same machine don't interfere with each other.
-
-## Installation
-
-> Tested on macOS and Linux. Requires `git` and a working Claude Code installation.
-
-### One-liner
+## Quick Start
 
 ```bash
-cd "$(find ~/.claude / -path '*/external_plugins/telegram' -type d 2>/dev/null | head -1)/.." && git apply --check ~/Downloads/telegram-zombie-fix.patch && git apply ~/Downloads/telegram-zombie-fix.patch
+# 1. Clone this repo
+git clone https://github.com/egerev/claude-telegram-upgrade.git
+cd claude-telegram-upgrade
+
+# 2. Find your plugin directory
+PLUGIN_DIR=$(find ~/.claude/plugins/cache -path '*/telegram/*/server.ts' -type f 2>/dev/null | head -1 | xargs dirname)
+echo "Plugin found at: $PLUGIN_DIR"
+
+# 3. Apply all patches
+for p in patches/*.patch; do
+  git -C "$PLUGIN_DIR" apply --check "$(pwd)/$p" && \
+  git -C "$PLUGIN_DIR" apply "$(pwd)/$p" && \
+  echo "Applied: $p"
+done
+
+# 4. Restart Claude Code
 ```
-
-### Step by step
-
-**1. Find the plugin directory**
-
-```bash
-# The Telegram plugin typically lives here:
-ls ~/.claude/external_plugins/telegram/server.ts
-
-# If not found, search for it:
-find ~ -path '*/external_plugins/telegram/server.ts' 2>/dev/null
-```
-
-**2. Download the patch**
-
-```bash
-curl -LO https://raw.githubusercontent.com/egerev/telegram-zombie-fix/main/telegram-zombie-fix.patch
-```
-
-**3. Preview changes (dry run)**
-
-```bash
-cd /path/to/external_plugins/..   # parent of external_plugins/
-git apply --check telegram-zombie-fix.patch
-```
-
-**4. Apply**
-
-```bash
-git apply telegram-zombie-fix.patch
-```
-
-**5. Restart Claude Code** — the fix takes effect on next Telegram plugin startup.
 
 ### Reverting
 
 ```bash
-cd /path/to/external_plugins/..
-git apply --reverse telegram-zombie-fix.patch
+for p in patches/*.patch; do
+  git -C "$PLUGIN_DIR" apply --reverse "$(pwd)/$p" 2>/dev/null && echo "Reverted: $p"
+done
 ```
 
-## How It Works
+## Patches in Detail
+
+### Zombie Fix
+
+The official plugin retries on 409 errors and does graceful shutdown ([PR #825](https://github.com/anthropics/claude-plugins-official/pull/825)), but **does not kill zombie processes**. The old `bun` process stays alive, burns CPU in a retry loop, and blocks the new instance. Multiple community PRs ([#903](https://github.com/anthropics/claude-plugins-official/pull/903), [#1070](https://github.com/anthropics/claude-plugins-official/pull/1070), [#1136](https://github.com/anthropics/claude-plugins-official/pull/1136)) were closed — the repo only accepts Anthropic contributions.
+
+Open issues: [#947](https://github.com/anthropics/claude-plugins-official/issues/947), [#934](https://github.com/anthropics/claude-plugins-official/issues/934), [#1049](https://github.com/anthropics/claude-plugins-official/issues/1049), [#1146](https://github.com/anthropics/claude-plugins-official/issues/1146).
+
+**This patch adds:**
+- PID file with token hash — on startup, finds and kills the old process (SIGTERM → 2s → SIGKILL)
+- Clean removal on shutdown
+- Missing `await` on `mcp.notification()` that could silently drop messages
+- Token isolation — different bots never interfere with each other
 
 ```
-Startup
-  │
-  ├─ Read .server.pid
-  │   └─ Same token hash & process alive?
-  │       ├─ Yes → SIGTERM → wait 2s → SIGKILL
-  │       └─ No  → continue
-  │
-  ├─ Write new .server.pid (pid + tokenHash)
-  │
-  └─ Start bot polling (no more 409 conflicts)
-
-Shutdown
-  │
-  └─ Remove .server.pid
+Startup → read .server.pid → same token & alive? → kill it → write new PID → start polling
+Shutdown → remove .server.pid
 ```
 
-## Details
+### Voice Transcription *(coming soon)*
 
-- **Token isolation**: uses SHA-256 hash of the bot token to identify instances. Different bots never kill each other.
-- **Graceful first**: sends SIGTERM and waits 2 seconds before SIGKILL.
-- **PID file format**: JSON with `pid`, `tokenHash`, and `startedAt` fields, stored with `0600` permissions.
+Currently, voice messages arrive as `(voice message)` with a `.oga` file that Claude can't listen to. This patch will auto-transcribe them using local Whisper:
+
+- **macOS (Apple Silicon):** [mlx-whisper](https://github.com/ml-explore/mlx-examples/tree/main/whisper) — runs on GPU, fast
+- **Linux / Intel Mac:** [whisper.cpp](https://github.com/ggerganov/whisper.cpp) — CPU-based fallback
+- Converts `.oga` → `.wav` via `ffmpeg`, transcribes, sends text to Claude
+- No API keys needed — everything runs locally
+
+## Multi-Bot Setup
+
+Run different Telegram bots for different projects — each Claude Code session gets its own bot.
+
+### How it works
+
+The plugin reads `TELEGRAM_STATE_DIR` env var to determine where to store state (tokens, access, inbox). By default it's `~/.claude/channels/telegram`. Override it per-project to isolate bots.
+
+### Setup
+
+**1. Create a second bot** via [@BotFather](https://t.me/BotFather) on Telegram.
+
+**2. Create a state directory** for the new bot:
+
+```bash
+mkdir -p ~/.claude/channels/telegram-myproject
+```
+
+**3. Save the token:**
+
+```bash
+echo "TELEGRAM_BOT_TOKEN=<your-token>" > ~/.claude/channels/telegram-myproject/.env
+chmod 600 ~/.claude/channels/telegram-myproject/.env
+```
+
+**4. Configure the project.** In your project's `.claude/settings.local.json`:
+
+```json
+{
+  "env": {
+    "TELEGRAM_STATE_DIR": "/Users/<you>/.claude/channels/telegram-myproject"
+  }
+}
+```
+
+**5. Start Claude Code** in the project directory — it picks up the project-level setting and connects to the right bot.
+
+**6. Pair your Telegram account** — send any message to the new bot, then run `/telegram:access pair <code>` in Claude Code.
+
+### Result
+
+```
+~/.claude/channels/
+├── telegram/              ← default bot (personal projects)
+│   ├── .env               ← TELEGRAM_BOT_TOKEN=...
+│   ├── access.json
+│   └── inbox/
+├── telegram-myproject/    ← project-specific bot
+│   ├── .env
+│   ├── access.json
+│   └── inbox/
+└── telegram-work/         ← another project
+    ├── .env
+    ├── access.json
+    └── inbox/
+```
+
+Each bot is fully isolated — own token, own access list, own message inbox, own PID file (zombie fix handles this correctly).
+
+## Requirements
+
+- Claude Code with Telegram plugin v0.0.4+
+- `git` (to apply patches)
+- `ffmpeg` (for voice transcription patch)
+- `mlx-whisper` or `whisper-cpp` (for voice transcription patch)
 
 ## License
 
-MIT
+Patches: MIT. Original plugin: Apache 2.0 (Anthropic).
