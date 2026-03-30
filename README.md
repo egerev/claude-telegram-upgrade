@@ -8,6 +8,9 @@ Community upgrade pack for Claude Code's [Telegram plugin](https://github.com/an
 |-------|---------------|
 | [zombie-fix](patches/zombie-fix.patch) | Kills stale bot processes that cause 409 Conflict errors and 100% CPU |
 | [voice-transcription](patches/voice-transcription.patch) | Transcribes voice messages to text via local Whisper (mlx-whisper / whisper.cpp) |
+| [all](patches/all.patch) | Both patches combined — apply this one if you want everything |
+
+> **Note:** Apply `zombie-fix` first, then `voice-transcription`. Or just use `all.patch` for both at once.
 
 ## Prerequisites
 
