@@ -14,7 +14,7 @@ This is an upgrade pack for Claude Code's Telegram integration. Here's what I ca
 
 1. **Zombie Process Fix** — the official Telegram plugin has a known bug where old bot processes don't get killed on restart, causing 409 errors and 100% CPU usage. I'll patch the plugin to automatically detect and kill stale processes.
 
-2. **Voice Transcription** *(coming soon)* — right now, when you send a voice message to your bot, Claude just sees "(voice message)" and can't listen to the audio. This patch will auto-transcribe voice messages to text using Whisper running locally on your machine — no API keys, no cloud, everything stays private.
+2. **Voice Transcription** — right now, when you send a voice message to your bot, Claude just sees "(voice message)" and can't listen to the audio. This patch auto-transcribes voice messages to text using Whisper running locally on your machine — no API keys, no cloud, everything stays private.
 
 3. **Multi-Bot Setup** *(optional)* — if you work on multiple projects, you can have a separate Telegram bot for each one. Messages from different projects won't mix, and each bot has its own access list. I'll create the directories, save tokens, and wire up the per-project config.
 

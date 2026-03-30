@@ -69,9 +69,11 @@ PLUGIN_DIRS=$(find ~/.claude/plugins -path '*/telegram/server.ts' -o -path '*/te
 echo "Found plugin at: $PLUGIN_DIRS"
 
 # 3. Apply patches to every copy
+# Note: list patches explicitly to control order. all.patch is an alternative
+# that applies both at once (see patches/all.patch).
 for dir in $PLUGIN_DIRS; do
   echo "Patching: $dir"
-  for p in patches/*.patch; do
+  for p in patches/zombie-fix.patch patches/voice-transcription.patch; do
     git -C "$dir/../.." apply --check "$(pwd)/$p" 2>/dev/null && \
     git -C "$dir/../.." apply "$(pwd)/$p" && \
     echo "  Applied: $p"
@@ -84,7 +86,7 @@ done
 ### Reverting
 
 ```bash
-for p in patches/*.patch; do
+for p in patches/voice-transcription.patch patches/zombie-fix.patch; do
   git -C "$PLUGIN_DIR" apply --reverse "$(pwd)/$p" 2>/dev/null && echo "Reverted: $p"
 done
 ```
@@ -194,6 +196,23 @@ Each bot is fully isolated — own token, own access list, own message inbox, ow
 - `git` (to apply patches)
 - `ffmpeg` (for voice transcription patch)
 - `mlx-whisper` or `whisper-cpp` (for voice transcription patch)
+
+## After Plugin Updates
+
+Claude Code may auto-update the Telegram plugin, which overwrites patches. If voice transcription or zombie fix stops working after an update, re-apply:
+
+```bash
+cd ~/claude-telegram-upgrade
+PLUGIN_DIRS=$(find ~/.claude/plugins -path '*/telegram/server.ts' -o -path '*/telegram/*/server.ts' 2>/dev/null | xargs -I{} dirname {} | sort -u)
+for dir in $PLUGIN_DIRS; do
+  echo "Patching: $dir"
+  for p in patches/zombie-fix.patch patches/voice-transcription.patch; do
+    git -C "$dir/../.." apply --check "$(pwd)/$p" 2>/dev/null && \
+    git -C "$dir/../.." apply "$(pwd)/$p" && \
+    echo "  Applied: $p"
+  done
+done
+```
 
 ## License
 

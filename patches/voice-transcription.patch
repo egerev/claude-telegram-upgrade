@@ -1,8 +1,8 @@
 diff --git a/external_plugins/telegram/server.ts b/external_plugins/telegram/server.ts
-index 91d073a..89d92c9 100644
+index 91d073a..6bb96b1 100644
 --- a/external_plugins/telegram/server.ts
 +++ b/external_plugins/telegram/server.ts
-@@ -831,15 +831,120 @@ bot.on('message:document', async ctx => {
+@@ -831,15 +831,122 @@ bot.on('message:document', async ctx => {
    })
  })
  
@@ -27,7 +27,7 @@ index 91d073a..89d92c9 100644
 + */
 +async function commandExists(cmd: string): Promise<boolean> {
 +  try {
-+    const proc = Bun.spawn(['which', cmd], { stdout: 'pipe', stderr: 'pipe' })
++    const proc = Bun.spawn(['sh', '-c', `command -v ${cmd}`], { stdout: 'pipe', stderr: 'pipe' })
 +    return (await proc.exited) === 0
 +  } catch { return false }
 +}
@@ -104,10 +104,11 @@ index 91d073a..89d92c9 100644
 +  try {
 +    const file = await ctx.api.getFile(voice.file_id)
 +    if (file.file_path) {
-+      // Typing indicator — user sees "recording audio..." while we transcribe
++      // Typing indicator — user sees "typing..." while we transcribe
 +      void bot.api.sendChatAction(chat_id, 'typing').catch(() => {})
 +      const url = `https://api.telegram.org/file/bot${TOKEN}/${file.file_path}`
 +      const res = await fetch(url)
++      if (!res.ok) throw new Error(`Telegram file download: ${res.status}`)
 +      const buf = Buffer.from(await res.arrayBuffer())
 +      const ogaPath = join(INBOX_DIR, `${Date.now()}-${voice.file_unique_id}.oga`)
 +      mkdirSync(INBOX_DIR, { recursive: true })
@@ -121,6 +122,7 @@ index 91d073a..89d92c9 100644
 +        if (transcribed) text = `[voice]: ${transcribed}`
 +      } finally {
 +        clearInterval(typingInterval)
++        try { rmSync(ogaPath, { force: true }) } catch {}
 +      }
 +    }
 +  } catch (e: any) {
