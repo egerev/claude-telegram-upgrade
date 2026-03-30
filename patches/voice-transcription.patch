@@ -1,8 +1,8 @@
 diff --git a/external_plugins/telegram/server.ts b/external_plugins/telegram/server.ts
-index 91d073a..0f35115 100644
+index 91d073a..75d510c 100644
 --- a/external_plugins/telegram/server.ts
 +++ b/external_plugins/telegram/server.ts
-@@ -93,6 +93,112 @@ function removePidFile(): void {
+@@ -93,6 +93,194 @@ function removePidFile(): void {
    try { rmSync(PID_FILE, { force: true }) } catch {}
  }
  
@@ -46,13 +46,88 @@ index 91d073a..0f35115 100644
 +const CLI_COMMANDS: Record<string, { description: string; aliases?: string[] }> = {
 +  '/compact': { description: 'Compress conversation context' },
 +  '/clear': { description: 'Clear conversation and start fresh' },
-+  '/status': { description: 'Show session status' },
++  '/dash': { description: 'Show session dashboard' },
 +  '/model': { description: 'Switch model (e.g. /model opus)', aliases: ['/model sonnet', '/model opus', '/model haiku'] },
 +  '/effort': { description: 'Set effort level (e.g. /effort high)', aliases: ['/effort low', '/effort medium', '/effort high'] },
 +}
 +
++/**
++ * Collect system status and format a rich status card for Telegram.
++ */
++async function buildStatusMessage(session: string): Promise<string> {
++  const lines: string[] = []
++
++  // Session name
++  lines.push(`📊 Session: ${session}`)
++  lines.push('')
++
++  // Model + effort from tmux header
++  try {
++    const pane = await runAsync('tmux', ['capture-pane', '-t', session, '-p'])
++    const modelMatch = pane.match(/(Opus|Sonnet|Haiku)\s+[\d.]+.*?·\s*(.*?)$/m)
++    if (modelMatch) {
++      lines.push(`🤖 ${modelMatch[1]} ${modelMatch[0].match(/[\d.]+/)?.[0] ?? ''} · ${modelMatch[2]?.trim() ?? ''}`)
++    }
++  } catch {}
++
++  // Uptime from PID file
++  try {
++    const pidRaw = readFileSync(PID_FILE, 'utf8')
++    const pidData = JSON.parse(pidRaw) as { startedAt?: string }
++    if (pidData.startedAt) {
++      const started = new Date(pidData.startedAt)
++      const upMs = Date.now() - started.getTime()
++      const hrs = Math.floor(upMs / 3600000)
++      const mins = Math.floor((upMs % 3600000) / 60000)
++      lines.push(`⏱ Uptime: ${hrs}h ${mins}m`)
++    }
++  } catch {}
++
++  // Whisper model
++  const whisperModel = process.env.TELEGRAM_WHISPER_MODEL
++  if (whisperModel) {
++    const modelName = whisperModel.split('/').pop()?.replace('ggml-', '').replace('.bin', '') ?? 'unknown'
++    lines.push(`🎙 Whisper: ${modelName}`)
++  }
++
++  // RAM
++  try {
++    const memRaw = await runAsync('sh', ['-c', "free -m | awk '/^Mem:/ {printf \"%dMB / %dMB (%.0f%%)\", $3, $2, $3/$2*100}'"])
++    lines.push(`💾 RAM: ${memRaw.trim()}`)
++  } catch {}
++
++  // Disk
++  try {
++    const diskRaw = await runAsync('sh', ['-c', "df -h / | awk 'NR==2 {printf \"%s / %s (%s)\", $3, $2, $5}'"])
++    lines.push(`💿 Disk: ${diskRaw.trim()}`)
++  } catch {}
++
++  // CPU load
++  try {
++    const loadRaw = await runAsync('sh', ['-c', "cat /proc/loadavg | awk '{printf \"%.1f %.1f %.1f\", $1, $2, $3}'"])
++    lines.push(`⚡ Load: ${loadRaw.trim()}`)
++  } catch {}
++
++  // Voice files in inbox
++  try {
++    const inboxCount = await runAsync('sh', ['-c', `find ${INBOX_DIR} -name '*.oga' 2>/dev/null | wc -l`])
++    const count = parseInt(inboxCount.trim()) || 0
++    if (count > 0) lines.push(`📨 Voice files in inbox: ${count}`)
++  } catch {}
++
++  // Tmux sessions
++  try {
++    const sessions = await runAsync('tmux', ['list-sessions', '-F', '#{session_name}'])
++    const names = sessions.trim().split('\n').filter(Boolean)
++    lines.push(`📺 Sessions: ${names.join(', ')}`)
++  } catch {}
++
++  return lines.join('\n')
++}
++
 +async function handleCliCommand(ctx: Context, text: string): Promise<boolean> {
-+  const trimmed = text.trim()
++  // Strip @botusername suffix that Telegram appends to commands
++  const trimmed = text.trim().replace(/@\S+/, '')
 +  // Check if this is a CLI command we handle
 +  const cmdKey = Object.keys(CLI_COMMANDS).find(cmd => trimmed === cmd || trimmed.startsWith(cmd + ' '))
 +  if (!cmdKey) return false
@@ -63,9 +138,18 @@ index 91d073a..0f35115 100644
 +    return true
 +  }
 +
++  // /status is handled entirely in the bot — no tmux send-keys
++  if (cmdKey === '/dash') {
++    try {
++      const status = await buildStatusMessage(session)
++      await ctx.reply(status).catch(() => {})
++    } catch (e: any) {
++      await ctx.reply(`Status error: ${e.message}`).catch(() => {})
++    }
++    return true
++  }
++
 +  try {
-+    // Send the command as keystrokes to the tmux session
-+    await runAsync('tmux', ['send-keys', '-t', session, trimmed, 'Enter'])
 +    // Capture tmux state before command
 +    const chat_id = String(ctx.chat!.id)
 +    let beforeLines = 0
@@ -73,6 +157,9 @@ index 91d073a..0f35115 100644
 +      const before = await runAsync('tmux', ['capture-pane', '-t', session, '-p'])
 +      beforeLines = before.split('\n').length
 +    } catch {}
++
++    // Send the command as keystrokes to the tmux session
++    await runAsync('tmux', ['send-keys', '-t', session, trimmed, 'Enter'])
 +
 +    // React to confirm
 +    const msgId = ctx.message?.message_id
@@ -87,16 +174,11 @@ index 91d073a..0f35115 100644
 +    try {
 +      const after = await runAsync('tmux', ['capture-pane', '-t', session, '-p'])
 +      const afterLines = after.split('\n')
-+      // Get only new lines that appeared after the command
 +      const newOutput = afterLines.slice(beforeLines).join('\n').trim()
 +      if (newOutput) {
-+        // Clean up ANSI escape codes and send result
 +        const clean = newOutput.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/[─━═│┃┌┐└┘├┤┬┴┼╌╍]/g, '').trim()
 +        if (clean && clean.length > 1) {
-+          await bot.api.sendMessage(chat_id, `\`${trimmed}\`\n\n${clean.slice(0, 4000)}`, { parse_mode: 'Markdown' }).catch(() => {
-+            // Fallback without markdown if it fails
-+            void bot.api.sendMessage(chat_id, `${trimmed}\n\n${clean.slice(0, 4000)}`).catch(() => {})
-+          })
++          await bot.api.sendMessage(chat_id, `${trimmed}\n\n${clean.slice(0, 4000)}`).catch(() => {})
 +        } else {
 +          await ctx.reply(`✅ ${trimmed}`).catch(() => {})
 +        }
@@ -115,7 +197,7 @@ index 91d073a..0f35115 100644
  // Last-resort safety net — without these the process dies silently on any
  // unhandled promise rejection. With them it logs and keeps serving tools.
  process.on('unhandledRejection', err => {
-@@ -831,15 +937,134 @@ bot.on('message:document', async ctx => {
+@@ -831,15 +1019,134 @@ bot.on('message:document', async ctx => {
    })
  })
  
@@ -257,7 +339,7 @@ index 91d073a..0f35115 100644
  })
  
  bot.on('message:audio', async ctx => {
-@@ -919,6 +1144,9 @@ async function handleInbound(
+@@ -919,6 +1226,9 @@ async function handleInbound(
      return
    }
  
