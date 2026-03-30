@@ -64,15 +64,18 @@ If you prefer to do it yourself:
 git clone https://github.com/egerev/claude-telegram-upgrade.git
 cd claude-telegram-upgrade
 
-# 2. Find your plugin directory
-PLUGIN_DIR=$(find ~/.claude/plugins/cache -path '*/telegram/*/server.ts' -type f 2>/dev/null | head -1 | xargs dirname)
-echo "Plugin found at: $PLUGIN_DIR"
+# 2. Find ALL plugin locations (Claude Code may use cache/ or marketplaces/)
+PLUGIN_DIRS=$(find ~/.claude/plugins -path '*/telegram/server.ts' -o -path '*/telegram/*/server.ts' 2>/dev/null | xargs -I{} dirname {} | sort -u)
+echo "Found plugin at: $PLUGIN_DIRS"
 
-# 3. Apply all patches
-for p in patches/*.patch; do
-  git -C "$PLUGIN_DIR" apply --check "$(pwd)/$p" && \
-  git -C "$PLUGIN_DIR" apply "$(pwd)/$p" && \
-  echo "Applied: $p"
+# 3. Apply patches to every copy
+for dir in $PLUGIN_DIRS; do
+  echo "Patching: $dir"
+  for p in patches/*.patch; do
+    git -C "$dir/../.." apply --check "$(pwd)/$p" 2>/dev/null && \
+    git -C "$dir/../.." apply "$(pwd)/$p" && \
+    echo "  Applied: $p"
+  done
 done
 
 # 4. Restart Claude Code

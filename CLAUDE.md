@@ -38,10 +38,12 @@ After the user confirms, follow these steps in order. Explain what each step doe
 ### Step 1: Check the Official Telegram Plugin
 
 ```bash
-find ~/.claude/plugins/cache -path '*/telegram/*/server.ts' -type f 2>/dev/null
+find ~/.claude/plugins -path '*/telegram/server.ts' -o -path '*/telegram/*/server.ts' 2>/dev/null
 ```
 
-If the file is found — the plugin is installed. Store the parent directory path — you'll need it for applying patches.
+Claude Code stores plugins in two locations: `cache/` (downloaded versions) and `marketplaces/` (source copies). The plugin may exist in one or both. **You must patch ALL copies** — Claude Code may run from either location.
+
+If files are found — the plugin is installed. Store ALL parent directory paths.
 
 If nothing is found, the official Telegram plugin is not installed. Help the user install it:
 
