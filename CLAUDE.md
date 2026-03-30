@@ -29,8 +29,7 @@ Wait for the user's confirmation before proceeding.
 ## What This Repo Contains
 
 - `patches/zombie-fix.patch` — kills zombie bot processes (409 Conflict / 100% CPU fix)
-- `patches/voice-transcription.patch` — auto-transcribes voice messages via local Whisper *(coming soon)*
-- Multi-bot setup instructions (below)
+- `patches/voice-transcription.patch` — auto-transcribes voice messages via local Whisper - Multi-bot setup instructions (below)
 
 ## Setup Task
 

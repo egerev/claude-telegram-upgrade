@@ -7,7 +7,7 @@ Community upgrade pack for Claude Code's [Telegram plugin](https://github.com/an
 | Patch | What it fixes |
 |-------|---------------|
 | [zombie-fix](patches/zombie-fix.patch) | Kills stale bot processes that cause 409 Conflict errors and 100% CPU |
-| voice-transcription *(coming soon)* | Transcribes voice messages to text via local Whisper (mlx-whisper / whisper.cpp) |
+| [voice-transcription](patches/voice-transcription.patch) | Transcribes voice messages to text via local Whisper (mlx-whisper / whisper.cpp) |
 
 ## Quick Start
 
@@ -78,14 +78,26 @@ Startup → read .server.pid → same token & alive? → kill it → write new P
 Shutdown → remove .server.pid
 ```
 
-### Voice Transcription *(coming soon)*
+### Voice Transcription
 
-Currently, voice messages arrive as `(voice message)` with a `.oga` file that Claude can't listen to. This patch will auto-transcribe them using local Whisper:
+Without this patch, voice messages arrive as `(voice message)` with a `.oga` file that Claude can't listen to. With the patch, voice messages are **automatically transcribed to text** before reaching Claude.
 
+**How it works:**
+1. Downloads the `.oga` voice file from Telegram
+2. Converts to `.wav` via `ffmpeg` (16kHz mono)
+3. Transcribes using locally installed Whisper
+4. Sends `[voice]: <transcribed text>` to Claude instead of `(voice message)`
+5. Falls back to `(voice message)` if transcription fails
+
+**Supported backends:**
 - **macOS (Apple Silicon):** [mlx-whisper](https://github.com/ml-explore/mlx-examples/tree/main/whisper) — runs on GPU, fast
 - **Linux / Intel Mac:** [whisper.cpp](https://github.com/ggerganov/whisper.cpp) — CPU-based fallback
-- Converts `.oga` → `.wav` via `ffmpeg`, transcribes, sends text to Claude
-- No API keys needed — everything runs locally
+
+**Configuration** (env vars in `.env` or project settings):
+- `TELEGRAM_WHISPER_MODEL` — model name or path (default: `mlx-community/whisper-small-mlx`)
+- `TELEGRAM_WHISPER_LANGUAGE` — language hint, e.g. `ru` (optional, auto-detect if omitted)
+
+No API keys needed — everything runs locally.
 
 ## Multi-Bot Setup
 

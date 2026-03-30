@@ -1,0 +1,98 @@
+diff --git a/external_plugins/telegram/server.ts b/external_plugins/telegram/server.ts
+--- a/external_plugins/telegram/server.ts
++++ b/external_plugins/telegram/server.ts
+@@ -18,6 +18,7 @@
+ import { z } from 'zod'
+ import { Bot, GrammyError, InlineKeyboard, InputFile, type Context } from 'grammy'
+ import type { ReactionTypeEmoji } from 'grammy/types'
++import { execFileSync } from 'child_process'
+ import { randomBytes } from 'crypto'
+ import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync } from 'fs'
+ import { homedir } from 'os'
+@@ -830,13 +831,64 @@
+     name,
+   })
+ })
+
++/**
++ * Transcribe a voice message using locally installed Whisper.
++ * Tries mlx_whisper (macOS Apple Silicon) first, then whisper-cpp.
++ * Env: TELEGRAM_WHISPER_MODEL (default: mlx-community/whisper-small-mlx),
++ *      TELEGRAM_WHISPER_LANGUAGE (optional, e.g. "ru").
++ */
++function transcribeVoice(ogaPath: string): string | null {
++  const wavPath = ogaPath.replace(/\.[^.]+$/, '.wav')
++  try {
++    try {
++      execFileSync('ffmpeg', ['-i', ogaPath, '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', wavPath, '-y'], {
++        timeout: 30_000, stdio: 'pipe',
++      })
++    } catch (e: any) {
++      process.stderr.write(`telegram channel: ffmpeg conversion failed: ${e.message}\n`)
++      return null
++    }
++    const model = process.env.TELEGRAM_WHISPER_MODEL
++    const lang = process.env.TELEGRAM_WHISPER_LANGUAGE
++    // mlx_whisper (macOS Apple Silicon) — writes <basename>.txt to output dir
++    try {
++      execFileSync('which', ['mlx_whisper'], { stdio: 'pipe' })
++      execFileSync('mlx_whisper', [
++        '--model', model ?? 'mlx-community/whisper-small-mlx',
++        '--output-format', 'txt', '--output-dir', INBOX_DIR,
++        ...(lang ? ['--language', lang] : []), wavPath,
++      ], { timeout: 120_000, stdio: 'pipe' })
++      const txtFile = join(INBOX_DIR, wavPath.split('/').pop()!.replace(/\.wav$/, '.txt'))
++      const text = readFileSync(txtFile, 'utf8').trim()
++      try { rmSync(txtFile, { force: true }) } catch {}
++      return text || null
++    } catch {}
++    // whisper-cpp (Linux / Intel Mac) — outputs to stdout
++    try {
++      execFileSync('which', ['whisper-cpp'], { stdio: 'pipe' })
++      if (!model) {
++        process.stderr.write('telegram channel: whisper-cpp needs TELEGRAM_WHISPER_MODEL (path to .bin)\n')
++        return null
++      }
++      const out = execFileSync('whisper-cpp', [
++        '-m', model, '-f', wavPath, '--no-timestamps',
++        ...(lang ? ['-l', lang] : []),
++      ], { timeout: 120_000, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] })
++      return (out as string).trim() || null
++    } catch (e: any) {
++      process.stderr.write(`telegram channel: transcription failed: ${e.message}\n`)
++      return null
++    }
++  } finally {
++    try { rmSync(wavPath, { force: true }) } catch {}
++  }
++}
++
+ bot.on('message:voice', async ctx => {
+   const voice = ctx.message.voice
+-  const text = ctx.message.caption ?? '(voice message)'
+-  await handleInbound(ctx, text, undefined, {
+-    kind: 'voice',
+-    file_id: voice.file_id,
+-    size: voice.file_size,
+-    mime: voice.mime_type,
+-  })
++  let text = ctx.message.caption ?? '(voice message)'
++  try {
++    const file = await ctx.api.getFile(voice.file_id)
++    if (file.file_path) {
++      const url = `https://api.telegram.org/file/bot${TOKEN}/${file.file_path}`
++      const res = await fetch(url)
++      const buf = Buffer.from(await res.arrayBuffer())
++      const ogaPath = join(INBOX_DIR, `${Date.now()}-${voice.file_unique_id}.oga`)
++      mkdirSync(INBOX_DIR, { recursive: true })
++      writeFileSync(ogaPath, buf)
++      const transcribed = transcribeVoice(ogaPath)
++      if (transcribed) text = `[voice]: ${transcribed}`
++    }
++  } catch (e: any) {
++    process.stderr.write(`telegram channel: voice download failed: ${e.message}\n`)
++  }
++  await handleInbound(ctx, text, undefined, { kind: 'voice', file_id: voice.file_id, size: voice.file_size, mime: voice.mime_type })
+ })
+
+ bot.on('message:audio', async ctx => {
