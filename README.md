@@ -1,12 +1,18 @@
 # Telegram Zombie Fix for Claude Code
 
-Fixes the **zombie process bug** in Claude Code's Telegram MCP plugin.
+Fixes the **zombie process bug** in Claude Code's Telegram MCP plugin (v0.0.4).
 
 ## The Problem
 
-When Claude Code restarts or crashes, the old Telegram bot process can stay alive as a zombie. The new instance then gets `409 Conflict` errors from Telegram's `getUpdates` API because only one consumer is allowed per bot token. The built-in retry logic helps, but the zombie may linger for minutes.
+When Claude Code restarts or crashes, the old Telegram bot process can stay alive as a zombie. The new instance then gets `409 Conflict` errors from Telegram's `getUpdates` API because only one consumer is allowed per bot token.
 
-## What the Patch Does
+### What's already in v0.0.4 (and why it's not enough)
+
+The official plugin ([anthropics/claude-plugins-official](https://github.com/anthropics/claude-plugins-official)) added retry with exponential backoff on 409 errors and graceful shutdown on stdin close ([PR #825](https://github.com/anthropics/claude-plugins-official/pull/825), merged 2026-03-21). This helps the new instance eventually take over, but **does not kill the zombie** — the old process keeps running, burning CPU in a retry loop. Multiple community PRs with PID-based fixes ([#903](https://github.com/anthropics/claude-plugins-official/pull/903), [#1070](https://github.com/anthropics/claude-plugins-official/pull/1070), [#1136](https://github.com/anthropics/claude-plugins-official/pull/1136)) were closed because the repo only accepts contributions from the Anthropic team.
+
+As of 2026-03-30, the root cause — zombie process accumulation — remains unfixed. Related open issues: [#947](https://github.com/anthropics/claude-plugins-official/issues/947), [#934](https://github.com/anthropics/claude-plugins-official/issues/934), [#1049](https://github.com/anthropics/claude-plugins-official/issues/1049), [#1146](https://github.com/anthropics/claude-plugins-official/issues/1146).
+
+## What This Patch Does
 
 1. **PID file management** — on startup, writes `{pid, tokenHash, startedAt}` to `.server.pid` in the plugin's state directory
 2. **Stale instance killer** — before starting, checks for a running process with the same bot token hash and kills it (SIGTERM → 2s grace → SIGKILL)
