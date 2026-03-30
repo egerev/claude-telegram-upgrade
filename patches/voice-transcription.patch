@@ -1,8 +1,121 @@
 diff --git a/external_plugins/telegram/server.ts b/external_plugins/telegram/server.ts
-index 91d073a..504311f 100644
+index 91d073a..0f35115 100644
 --- a/external_plugins/telegram/server.ts
 +++ b/external_plugins/telegram/server.ts
-@@ -831,15 +831,134 @@ bot.on('message:document', async ctx => {
+@@ -93,6 +93,112 @@ function removePidFile(): void {
+   try { rmSync(PID_FILE, { force: true }) } catch {}
+ }
+ 
++/**
++ * Find the tmux session name for this process by walking the process tree.
++ * bun(server.ts) → bun(run) → claude → bash(pane) → tmux
++ * Returns session name or null if not running in tmux.
++ */
++let _tmuxSession: string | null | undefined
++async function getTmuxSession(): Promise<string | null> {
++  if (_tmuxSession !== undefined) return _tmuxSession
++  try {
++    // Get all tmux panes with their PIDs
++    const panes = await runAsync('tmux', ['list-panes', '-a', '-F', '#{pane_pid} #{session_name}'])
++    const paneMap = new Map<string, string>()
++    for (const line of panes.trim().split('\n')) {
++      const [pid, name] = line.split(' ', 2)
++      if (pid && name) paneMap.set(pid, name)
++    }
++    // Walk up from current process to find a PID that matches a tmux pane
++    let current = String(process.pid)
++    for (let i = 0; i < 8; i++) {
++      if (paneMap.has(current)) {
++        _tmuxSession = paneMap.get(current)!
++        return _tmuxSession
++      }
++      const ppid = await runAsync('ps', ['-o', 'ppid=', '-p', current])
++      current = ppid.trim()
++      if (!current || current === '1') break
++    }
++  } catch {}
++  _tmuxSession = null
++  return null
++}
++
++/**
++ * CLI commands that can be executed via Telegram by sending /<command>.
++ * Intercepts the message before it reaches Claude and injects it into
++ * the tmux session as a real CLI command.
++ */
++const CLI_COMMANDS: Record<string, { description: string; aliases?: string[] }> = {
++  '/compact': { description: 'Compress conversation context' },
++  '/clear': { description: 'Clear conversation and start fresh' },
++  '/status': { description: 'Show session status' },
++  '/model': { description: 'Switch model (e.g. /model opus)', aliases: ['/model sonnet', '/model opus', '/model haiku'] },
++  '/effort': { description: 'Set effort level (e.g. /effort high)', aliases: ['/effort low', '/effort medium', '/effort high'] },
++}
++
++async function handleCliCommand(ctx: Context, text: string): Promise<boolean> {
++  const trimmed = text.trim()
++  // Check if this is a CLI command we handle
++  const cmdKey = Object.keys(CLI_COMMANDS).find(cmd => trimmed === cmd || trimmed.startsWith(cmd + ' '))
++  if (!cmdKey) return false
++
++  const session = await getTmuxSession()
++  if (!session) {
++    await ctx.reply('Not running in tmux — cannot execute CLI commands remotely.').catch(() => {})
++    return true
++  }
++
++  try {
++    // Send the command as keystrokes to the tmux session
++    await runAsync('tmux', ['send-keys', '-t', session, trimmed, 'Enter'])
++    // Capture tmux state before command
++    const chat_id = String(ctx.chat!.id)
++    let beforeLines = 0
++    try {
++      const before = await runAsync('tmux', ['capture-pane', '-t', session, '-p'])
++      beforeLines = before.split('\n').length
++    } catch {}
++
++    // React to confirm
++    const msgId = ctx.message?.message_id
++    if (msgId != null) {
++      void bot.api.setMessageReaction(chat_id, msgId, [
++        { type: 'emoji', emoji: '👍' as ReactionTypeEmoji['emoji'] },
++      ]).catch(() => {})
++    }
++
++    // Wait for command to execute, then capture new output
++    await new Promise(r => setTimeout(r, 3000))
++    try {
++      const after = await runAsync('tmux', ['capture-pane', '-t', session, '-p'])
++      const afterLines = after.split('\n')
++      // Get only new lines that appeared after the command
++      const newOutput = afterLines.slice(beforeLines).join('\n').trim()
++      if (newOutput) {
++        // Clean up ANSI escape codes and send result
++        const clean = newOutput.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/[─━═│┃┌┐└┘├┤┬┴┼╌╍]/g, '').trim()
++        if (clean && clean.length > 1) {
++          await bot.api.sendMessage(chat_id, `\`${trimmed}\`\n\n${clean.slice(0, 4000)}`, { parse_mode: 'Markdown' }).catch(() => {
++            // Fallback without markdown if it fails
++            void bot.api.sendMessage(chat_id, `${trimmed}\n\n${clean.slice(0, 4000)}`).catch(() => {})
++          })
++        } else {
++          await ctx.reply(`✅ ${trimmed}`).catch(() => {})
++        }
++      } else {
++        await ctx.reply(`✅ ${trimmed}`).catch(() => {})
++      }
++    } catch {
++      await ctx.reply(`✅ ${trimmed}`).catch(() => {})
++    }
++  } catch (e: any) {
++    await ctx.reply(`Failed to execute: ${e.message}`).catch(() => {})
++  }
++  return true
++}
++
+ // Last-resort safety net — without these the process dies silently on any
+ // unhandled promise rejection. With them it logs and keeps serving tools.
+ process.on('unhandledRejection', err => {
+@@ -831,15 +937,134 @@ bot.on('message:document', async ctx => {
    })
  })
  
@@ -144,3 +257,13 @@ index 91d073a..504311f 100644
  })
  
  bot.on('message:audio', async ctx => {
+@@ -919,6 +1144,9 @@ async function handleInbound(
+     return
+   }
+ 
++  // CLI command intercept — handle /compact, /clear, etc. via tmux
++  if (await handleCliCommand(ctx, text)) return
++
+   const access = result.access
+   const from = ctx.from!
+   const chat_id = String(ctx.chat!.id)
