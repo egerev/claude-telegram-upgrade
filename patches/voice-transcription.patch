@@ -1,8 +1,8 @@
 diff --git a/external_plugins/telegram/server.ts b/external_plugins/telegram/server.ts
-index 91d073a..9b50d5a 100644
+index 91d073a..504311f 100644
 --- a/external_plugins/telegram/server.ts
 +++ b/external_plugins/telegram/server.ts
-@@ -831,15 +831,139 @@ bot.on('message:document', async ctx => {
+@@ -831,15 +831,134 @@ bot.on('message:document', async ctx => {
    })
  })
  
@@ -110,13 +110,8 @@ index 91d073a..9b50d5a 100644
 +    return
 +  }
 +
-+  const MAX_VOICE_SIZE = 10 * 1024 * 1024 // 10MB (~5 min of audio)
 +  let text = ctx.message.caption ?? '(voice message)'
-+
-+  if (voice.file_size && voice.file_size > MAX_VOICE_SIZE) {
-+    process.stderr.write(`telegram channel: voice message too large (${voice.file_size} bytes), skipping transcription\n`)
-+    // Fall through to handleInbound with "(voice message)" text
-+  } else {
++  {
 +    try {
 +      const file = await ctx.api.getFile(voice.file_id)
 +      if (file.file_path) {
