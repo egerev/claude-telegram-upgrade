@@ -35,13 +35,26 @@ Wait for the user's confirmation before proceeding.
 
 After the user confirms, follow these steps in order. Explain what each step does before doing it. Ask for confirmation before making changes.
 
-### Step 1: Find the Telegram Plugin
+### Step 1: Check the Official Telegram Plugin
 
 ```bash
 find ~/.claude/plugins/cache -path '*/telegram/*/server.ts' -type f 2>/dev/null
 ```
 
-The plugin directory is the parent of `server.ts`. Store this path — you'll need it for applying patches.
+If the file is found — the plugin is installed. Store the parent directory path — you'll need it for applying patches.
+
+If nothing is found, the official Telegram plugin is not installed. Help the user install it:
+
+1. Explain: "The official Telegram plugin from Anthropic needs to be installed first. It's what these patches improve."
+2. Check if `telegram@claude-plugins-official` is in `~/.claude/settings.json` under `enabledPlugins`:
+   ```bash
+   cat ~/.claude/settings.json
+   ```
+3. If not present, tell the user to add it:
+   - They can run `/telegram:configure` in Claude Code
+   - Or manually add `"telegram@claude-plugins-official": true` to the `enabledPlugins` section in `~/.claude/settings.json`
+4. After enabling, they need to **restart Claude Code** so it downloads the plugin
+5. Then re-run the search to find the plugin directory
 
 ### Step 2: Apply Patches
 

@@ -9,6 +9,29 @@ Community upgrade pack for Claude Code's [Telegram plugin](https://github.com/an
 | [zombie-fix](patches/zombie-fix.patch) | Kills stale bot processes that cause 409 Conflict errors and 100% CPU |
 | [voice-transcription](patches/voice-transcription.patch) | Transcribes voice messages to text via local Whisper (mlx-whisper / whisper.cpp) |
 
+## Prerequisites
+
+These patches require the **official Telegram plugin** for Claude Code. If you don't have it yet:
+
+```bash
+# Open Claude Code and enable the Telegram plugin
+claude
+# Then run:
+/telegram:configure
+```
+
+Or add it manually to `~/.claude/settings.json`:
+
+```json
+{
+  "enabledPlugins": {
+    "telegram@claude-plugins-official": true
+  }
+}
+```
+
+Then restart Claude Code so it downloads the plugin. You'll also need a Telegram bot token from [@BotFather](https://t.me/BotFather).
+
 ## Quick Start
 
 The easiest way: clone and let Claude Code do everything for you.
@@ -21,6 +44,7 @@ claude
 
 Then just say **"set it up"**. Claude Code will read the included `CLAUDE.md`, explain what it's going to do, and walk you through the entire setup:
 
+- Check that the official Telegram plugin is installed (and help you install it if not)
 - Apply all patches to the official plugin
 - Configure separate Telegram bots for different projects (optional)
 - Install voice transcription dependencies — `ffmpeg`, `mlx-whisper` (macOS) or `whisper-cpp` (Linux), download the Whisper model (optional)
@@ -160,7 +184,7 @@ Each bot is fully isolated — own token, own access list, own message inbox, ow
 
 ## Requirements
 
-- Claude Code with Telegram plugin v0.0.4+
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) with the official Telegram plugin enabled
 - `git` (to apply patches)
 - `ffmpeg` (for voice transcription patch)
 - `mlx-whisper` or `whisper-cpp` (for voice transcription patch)
