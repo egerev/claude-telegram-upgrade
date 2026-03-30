@@ -1,0 +1,89 @@
+diff --git a/external_plugins/telegram/server.ts b/external_plugins/telegram/server.ts
+index 3211bba..91d073a 100644
+--- a/external_plugins/telegram/server.ts
++++ b/external_plugins/telegram/server.ts
+@@ -18,7 +18,7 @@ import {
+ import { z } from 'zod'
+ import { Bot, GrammyError, InlineKeyboard, InputFile, type Context } from 'grammy'
+ import type { ReactionTypeEmoji } from 'grammy/types'
+-import { randomBytes } from 'crypto'
++import { randomBytes, createHash } from 'crypto'
+ import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync } from 'fs'
+ import { homedir } from 'os'
+ import { join, extname, sep } from 'path'
+@@ -51,6 +51,47 @@ if (!TOKEN) {
+   process.exit(1)
+ }
+ const INBOX_DIR = join(STATE_DIR, 'inbox')
++const PID_FILE = join(STATE_DIR, '.server.pid')
++const TOKEN_HASH = createHash('sha256').update(TOKEN).digest('hex').slice(0, 16)
++
++/**
++ * Kill stale instance that used the SAME bot token (identified by token hash).
++ * Different bots (different tokens, different STATE_DIRs) are never touched.
++ */
++function killOldInstance(): void {
++  try {
++    const raw = readFileSync(PID_FILE, 'utf8')
++    const entry = JSON.parse(raw) as { pid: number; tokenHash: string }
++    if (entry.tokenHash !== TOKEN_HASH || entry.pid === process.pid) return
++
++    // Check if old process is still alive
++    try { process.kill(entry.pid, 0) } catch { return } // already dead
++
++    process.stderr.write(`telegram channel: killing stale instance PID ${entry.pid}\n`)
++    try { process.kill(entry.pid, 'SIGTERM') } catch { return }
++
++    // Give 2s for graceful shutdown, then force-kill
++    const deadline = Date.now() + 2000
++    while (Date.now() < deadline) {
++      try { process.kill(entry.pid, 0) } catch { return } // dead
++      Bun.sleepSync(100)
++    }
++    try {
++      process.kill(entry.pid, 'SIGKILL')
++      process.stderr.write(`telegram channel: force-killed stale instance PID ${entry.pid}\n`)
++    } catch {}
++  } catch {} // no PID file or parse error — nothing to kill
++}
++
++function writePidFile(): void {
++  mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
++  const entry = { pid: process.pid, tokenHash: TOKEN_HASH, startedAt: new Date().toISOString() }
++  writeFileSync(PID_FILE, JSON.stringify(entry) + '\n', { mode: 0o600 })
++}
++
++function removePidFile(): void {
++  try { rmSync(PID_FILE, { force: true }) } catch {}
++}
+ 
+ // Last-resort safety net — without these the process dies silently on any
+ // unhandled promise rejection. With them it logs and keeps serving tools.
+@@ -621,6 +662,7 @@ function shutdown(): void {
+   if (shuttingDown) return
+   shuttingDown = true
+   process.stderr.write('telegram channel: shutting down\n')
++  removePidFile()
+   // bot.stop() signals the poll loop to end; the current getUpdates request
+   // may take up to its long-poll timeout to return. Force-exit after 2s.
+   setTimeout(() => process.exit(0), 2000)
+@@ -922,7 +964,7 @@ async function handleInbound(
+ 
+   // image_path goes in meta only — an in-content "[image attached — read: PATH]"
+   // annotation is forgeable by any allowlisted sender typing that string.
+-  mcp.notification({
++  await mcp.notification({
+     method: 'notifications/claude/channel',
+     params: {
+       content: text,
+@@ -953,6 +995,10 @@ bot.catch(err => {
+   process.stderr.write(`telegram channel: handler error (polling continues): ${err.error}\n`)
+ })
+ 
++// Kill any stale instance using the same bot token, then claim the PID file.
++killOldInstance()
++writePidFile()
++
+ // 409 Conflict = another getUpdates consumer is still active (zombie from a
+ // previous session, or a second Claude Code instance). Retry with backoff
+ // until the slot frees up instead of crashing on the first rejection.
