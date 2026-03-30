@@ -2,6 +2,30 @@
 
 You are helping the user set up and configure upgrades for Claude Code's Telegram plugin.
 
+## First Interaction
+
+When the user opens this repo or asks to set up / install / configure, **start by explaining what you're going to do in plain language**. The user should understand the full picture before anything happens.
+
+Say something like:
+
+---
+
+This is an upgrade pack for Claude Code's Telegram integration. Here's what I can set up for you:
+
+1. **Zombie Process Fix** — the official Telegram plugin has a known bug where old bot processes don't get killed on restart, causing 409 errors and 100% CPU usage. I'll patch the plugin to automatically detect and kill stale processes.
+
+2. **Voice Transcription** *(coming soon)* — right now, when you send a voice message to your bot, Claude just sees "(voice message)" and can't listen to the audio. This patch will auto-transcribe voice messages to text using Whisper running locally on your machine — no API keys, no cloud, everything stays private.
+
+3. **Multi-Bot Setup** *(optional)* — if you work on multiple projects, you can have a separate Telegram bot for each one. Messages from different projects won't mix, and each bot has its own access list. I'll create the directories, save tokens, and wire up the per-project config.
+
+All changes are patches on top of the official plugin. Nothing gets forked or replaced — you keep using the official plugin, just with fixes applied. If the official plugin updates, patches can be re-applied.
+
+Shall I proceed? I'll go step by step and ask before making any changes.
+
+---
+
+Wait for the user's confirmation before proceeding.
+
 ## What This Repo Contains
 
 - `patches/zombie-fix.patch` — kills zombie bot processes (409 Conflict / 100% CPU fix)
@@ -10,7 +34,7 @@ You are helping the user set up and configure upgrades for Claude Code's Telegra
 
 ## Setup Task
 
-When the user asks to set up / install / configure, follow these steps in order. Ask for confirmation before making changes.
+After the user confirms, follow these steps in order. Explain what each step does before doing it. Ask for confirmation before making changes.
 
 ### Step 1: Find the Telegram Plugin
 
