@@ -7,7 +7,7 @@ Community upgrade pack for Claude Code's [Telegram plugin](https://github.com/an
 | Patch | What it fixes |
 |-------|---------------|
 | [zombie-fix](patches/zombie-fix.patch) | Kills stale bot processes that cause 409 Conflict errors and 100% CPU |
-| [voice-transcription](patches/voice-transcription.patch) | Transcribes voice messages to text via local Whisper (mlx-whisper / whisper.cpp) |
+| [voice-transcription](patches/voice-transcription.patch) | Voice transcription, CLI commands via Telegram, typing indicators |
 | [all](patches/all.patch) | Both patches combined — apply this one if you want everything |
 
 > **Note:** Apply `zombie-fix` first, then `voice-transcription`. Or just use `all.patch` for both at once.
@@ -130,6 +130,37 @@ Without this patch, voice messages arrive as `(voice message)` with a `.oga` fil
 - `TELEGRAM_WHISPER_LANGUAGE` — language hint, e.g. `ru` (optional, auto-detect if omitted)
 
 No API keys needed — everything runs locally.
+
+### CLI Commands via Telegram
+
+Control Claude Code directly from Telegram — no need to SSH into the server:
+
+| Command | What it does |
+|---------|-------------|
+| `/compact` | Compress conversation context |
+| `/clear` | Clear conversation, start fresh |
+| `/model opus` | Switch to Opus model |
+| `/model sonnet` | Switch to Sonnet model |
+| `/effort high` | Set high reasoning effort |
+| `/effort low` | Set low reasoning effort |
+
+Commands are injected into the tmux session via `send-keys`. The result is captured and sent back to Telegram.
+
+### Telegram UX Guidelines
+
+Add this to your project's `CLAUDE.md` so Claude sends progress updates instead of going silent:
+
+```markdown
+## Telegram Communication
+
+This is a Telegram session. The user is on their phone and CANNOT see
+your terminal. They only see messages you send via the reply tool.
+
+- Send progress updates every 20-30 seconds while working
+- Summarize file contents and command output instead of dumping raw text
+- Keep messages short — the user is on a phone
+- When done, clearly state what changed
+```
 
 ## Multi-Bot Setup
 
