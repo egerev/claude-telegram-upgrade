@@ -11,6 +11,27 @@ Community upgrade pack for Claude Code's [Telegram plugin](https://github.com/an
 
 ## Quick Start
 
+The easiest way: clone and let Claude Code do everything for you.
+
+```bash
+git clone https://github.com/egerev/claude-telegram-upgrade.git
+cd claude-telegram-upgrade
+claude
+```
+
+Then just say **"set it up"**. Claude Code will read the included `CLAUDE.md`, explain what it's going to do, and walk you through the entire setup:
+
+- Apply all patches to the official plugin
+- Configure separate Telegram bots for different projects (optional)
+- Install voice transcription dependencies — `ffmpeg`, `mlx-whisper` (macOS) or `whisper-cpp` (Linux), download the Whisper model (optional)
+- Verify everything works
+
+All interactive, step by step. No need to read docs or run commands manually — Claude Code handles everything.
+
+### Manual install
+
+If you prefer to do it yourself:
+
 ```bash
 # 1. Clone this repo
 git clone https://github.com/egerev/claude-telegram-upgrade.git
