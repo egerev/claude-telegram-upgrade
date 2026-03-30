@@ -31,8 +31,15 @@ This opens a browser, you authenticate, and it saves a token to `~/.claude/.setu
 
 ### How to use on server
 
+Store the token in a dedicated env file:
 ```bash
-export CLAUDE_CODE_OAUTH_TOKEN=$(cat ~/.claude/.setup-token)
+echo "export CLAUDE_CODE_OAUTH_TOKEN=$(cat ~/.claude/.setup-token | tr -d '[:space:]')" > ~/.claude/.env
+chmod 600 ~/.claude/.env
+```
+
+Then source it before launching Claude Code:
+```bash
+source ~/.claude/.env
 claude --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
 ```
 
@@ -41,18 +48,19 @@ claude --channels plugin:telegram@claude-plugins-official --dangerously-skip-per
 ## Launching Claude Code with Telegram
 
 ```bash
+source ~/.claude/.env
 claude \
   --channels plugin:telegram@claude-plugins-official \
   --dangerously-skip-permissions \
   --effort high \
-  --model opus
+  --model sonnet
 ```
 
 Flags:
 - `--channels plugin:telegram@...` — enables the Telegram MCP plugin as a channel
 - `--dangerously-skip-permissions` — no permission prompts (headless)
 - `--effort high` — higher reasoning effort
-- `--model opus` — use Opus model
+- `--model sonnet` (or `--model opus` for Max plan users)
 
 ## Multi-Bot Setup
 
@@ -90,12 +98,10 @@ Each project has `.claude/settings.local.json`:
 tmux new-session -d -s project1 -c ~/projects/project1
 tmux new-session -d -s project2 -c ~/projects/project2
 
-# Launch Claude Code in each
-TOKEN=$(cat ~/.claude/.setup-token | tr -d '[:space:]')
+# Launch Claude Code in each (token is loaded from ~/.claude/.env)
+tmux send-keys -t project1 "source ~/.claude/.env && export PATH=\"\$HOME/.bun/bin:\$PATH\" && claude --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions --effort high --model sonnet" Enter
 
-tmux send-keys -t project1 "export PATH=\"\$HOME/.bun/bin:\$PATH\" CLAUDE_CODE_OAUTH_TOKEN=\"$TOKEN\" && claude --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions --effort high --model opus" Enter
-
-tmux send-keys -t project2 "export PATH=\"\$HOME/.bun/bin:\$PATH\" CLAUDE_CODE_OAUTH_TOKEN=\"$TOKEN\" && claude --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions --effort high --model opus" Enter
+tmux send-keys -t project2 "source ~/.claude/.env && export PATH=\"\$HOME/.bun/bin:\$PATH\" && claude --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions --effort high --model sonnet" Enter
 ```
 
 ### Attach to sessions

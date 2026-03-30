@@ -214,6 +214,13 @@ for dir in $PLUGIN_DIRS; do
 done
 ```
 
+## Security Considerations
+
+- **`--dangerously-skip-permissions`** disables all permission prompts in Claude Code. Claude can read, write, and execute anything on the server without asking. Only use this on a server you control and trust.
+- **Telegram access = code execution.** Anyone who can send messages to your paired bot can instruct Claude to run arbitrary commands. Use a private bot and keep the bot token secret. Do not share bot tokens or add untrusted users to the allowlist.
+- **Personal servers only.** This setup is designed for single-user personal servers. Do not run on shared infrastructure or expose the bot publicly.
+- **Token storage.** The OAuth token is stored in `~/.claude/.env` with `chmod 600` permissions (owner read/write only). The bot token is stored in `~/.claude/channels/telegram-<project>/.env`, also `chmod 600`.
+
 ## License
 
 Patches: MIT. Original plugin: Apache 2.0 (Anthropic).
