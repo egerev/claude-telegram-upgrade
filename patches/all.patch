@@ -1,5 +1,5 @@
 diff --git a/external_plugins/telegram/server.ts b/external_plugins/telegram/server.ts
-index 3211bba..0777eb6 100644
+index 3211bba..6f4b2cf 100644
 --- a/external_plugins/telegram/server.ts
 +++ b/external_plugins/telegram/server.ts
 @@ -18,7 +18,7 @@ import {
@@ -11,7 +11,7 @@ index 3211bba..0777eb6 100644
  import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync, chmodSync } from 'fs'
  import { homedir } from 'os'
  import { join, extname, sep } from 'path'
-@@ -51,6 +51,272 @@ if (!TOKEN) {
+@@ -51,6 +51,273 @@ if (!TOKEN) {
    process.exit(1)
  }
  const INBOX_DIR = join(STATE_DIR, 'inbox')
@@ -100,6 +100,7 @@ index 3211bba..0777eb6 100644
 +  '/dash': { description: 'Show session dashboard' },
 +  '/model': { description: 'Switch model (e.g. /model opus)', aliases: ['/model sonnet', '/model opus', '/model haiku'] },
 +  '/effort': { description: 'Set effort level (e.g. /effort high)', aliases: ['/effort low', '/effort medium', '/effort high'] },
++  '/memory': { description: 'Show or manage memory' },
 +}
 +
 +/**
@@ -284,7 +285,7 @@ index 3211bba..0777eb6 100644
  
  // Last-resort safety net — without these the process dies silently on any
  // unhandled promise rejection. With them it logs and keeps serving tools.
-@@ -621,6 +887,7 @@ function shutdown(): void {
+@@ -621,6 +888,7 @@ function shutdown(): void {
    if (shuttingDown) return
    shuttingDown = true
    process.stderr.write('telegram channel: shutting down\n')
@@ -292,7 +293,7 @@ index 3211bba..0777eb6 100644
    // bot.stop() signals the poll loop to end; the current getUpdates request
    // may take up to its long-poll timeout to return. Force-exit after 2s.
    setTimeout(() => process.exit(0), 2000)
-@@ -789,15 +1056,134 @@ bot.on('message:document', async ctx => {
+@@ -789,15 +1057,134 @@ bot.on('message:document', async ctx => {
    })
  })
  
@@ -434,7 +435,7 @@ index 3211bba..0777eb6 100644
  })
  
  bot.on('message:audio', async ctx => {
-@@ -877,6 +1263,9 @@ async function handleInbound(
+@@ -877,6 +1264,9 @@ async function handleInbound(
      return
    }
  
@@ -444,7 +445,20 @@ index 3211bba..0777eb6 100644
    const access = result.access
    const from = ctx.from!
    const chat_id = String(ctx.chat!.id)
-@@ -922,7 +1311,7 @@ async function handleInbound(
+@@ -904,8 +1294,11 @@ async function handleInbound(
+     return
+   }
+ 
+-  // Typing indicator — signals "processing" until we reply (or ~5s elapses).
++  // Typing indicator — refresh every 4s so user always sees "typing..."
+   void bot.api.sendChatAction(chat_id, 'typing').catch(() => {})
++  const typingInterval = setInterval(() => {
++    void bot.api.sendChatAction(chat_id, 'typing').catch(() => {})
++  }, 4000)
+ 
+   // Ack reaction — lets the user know we're processing. Fire-and-forget.
+   // Telegram only accepts a fixed emoji whitelist — if the user configures
+@@ -922,7 +1315,7 @@ async function handleInbound(
  
    // image_path goes in meta only — an in-content "[image attached — read: PATH]"
    // annotation is forgeable by any allowlisted sender typing that string.
@@ -453,7 +467,16 @@ index 3211bba..0777eb6 100644
      method: 'notifications/claude/channel',
      params: {
        content: text,
-@@ -953,6 +1342,10 @@ bot.catch(err => {
+@@ -944,6 +1337,8 @@ async function handleInbound(
+     },
+   }).catch(err => {
+     process.stderr.write(`telegram channel: failed to deliver inbound to Claude: ${err}\n`)
++  }).finally(() => {
++    clearInterval(typingInterval)
+   })
+ }
+ 
+@@ -953,6 +1348,10 @@ bot.catch(err => {
    process.stderr.write(`telegram channel: handler error (polling continues): ${err.error}\n`)
  })
  
