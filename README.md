@@ -162,6 +162,29 @@ your terminal. They only see messages you send via the reply tool.
 - When done, clearly state what changed
 ```
 
+### Recommended Permissions for Headless/Server Use
+
+Telegram's permission approval has [known bugs](https://github.com/anthropics/claude-code/issues/40016) — approvals get lost after the first one, and `.claude/` directory prompts don't go through the channel at all. On a server, a stuck permission prompt = a dead bot.
+
+Add this to your project's `.claude/settings.local.json` to pre-approve everything:
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Edit(**)", "Write(**)", "Read(**)",
+      "Edit(~/.claude/**)", "Write(~/.claude/**)", "Read(~/.claude/**)",
+      "Bash(git *)", "Bash(npm *)", "Bash(bun *)", "Bash(mkdir *)",
+      "Bash(cp *)", "Bash(mv *)", "Bash(rm *)", "Bash(ls *)",
+      "Bash(cat *)", "Bash(grep *)", "Bash(python3 *)", "Bash(curl *)",
+      "Bash(gh *)", "Bash(jq *)",
+      "WebFetch(*)", "WebSearch(*)", "Fetch(*)",
+      "mcp__*"
+    ]
+  }
+}
+```
+
 ## Multi-Bot Setup
 
 Run different Telegram bots for different projects — each Claude Code session gets its own bot.
